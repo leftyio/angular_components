@@ -136,10 +136,13 @@ Stream<Event> triggersOutsideAny(Predicate<Node> checkNodeInside) {
           lastDownEvent = null;
         });
 
+        // note(hadrien) temporary disable on focus
+        // https://github.com/dart-lang/angular_components/issues/423
+
         // Since 'focusin' event is not supported in Firefox, listen to 'focus'
         // event with useCapture set to true to implement event delegation and
         // capture changes to active element on document.
-        document.addEventListener('focus', listener, true);
+        // document.addEventListener('focus', listener, true);
 
         // Handles touches outside of element for Safari on iOS devices since
         // touch events are not detected as clicks on iOS platforms.
