@@ -6,6 +6,7 @@ import 'dart:async';
 import 'dart:html';
 
 import 'package:angular/angular.dart';
+import 'package:angular_components/material_icon/material_icon.dart';
 import 'package:intl/intl.dart';
 import 'package:angular_components/button_decorator/button_decorator.dart';
 import 'package:angular_components/focus/focus.dart';
@@ -27,7 +28,7 @@ import 'package:angular_components/utils/id_generator/id_generator.dart';
   providers: [ExistingProvider(HasRenderer, MaterialChipComponent)],
   templateUrl: 'material_chip.html',
   styleUrls: ['material_chip.scss.css'],
-  directives: [ButtonDirective, NgIf],
+  directives: [ButtonDirective, NgIf, MaterialIconComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
 )
 class MaterialChipComponent<T> extends RootFocusable implements HasRenderer<T> {
