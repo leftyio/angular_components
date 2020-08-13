@@ -14,7 +14,6 @@ import 'package:angular_components/material_stepper/common.dart';
 import 'package:angular_components/material_stepper/material_step.dart';
 import 'package:angular_components/material_yes_no_buttons/material_yes_no_buttons.dart';
 import 'package:angular_components/model/action/async_action.dart';
-import 'package:angular_components/utils/angular/properties/properties.dart';
 import 'package:angular_components/utils/angular/scroll_host/angular_2.dart';
 import 'package:angular_components/utils/browser/events/events.dart';
 
@@ -54,12 +53,18 @@ class MaterialStepperComponent {
   static const defaultSize = sizeDefault;
   List<StepDirective> steps = [];
 
-  int activeStepIndex;
+  int _activeStepIndex;
+  int get activeStepIndex => _activeStepIndex;
+  set activeStepIndex(int value) {
+    _activeStepIndex = value;
+    _recalculatePropertiesOfSteps();
+  }
+
   bool stepperDone = false;
 
   var _orientation = defaultOrientation;
   var _size = defaultSize;
-  var _legalJumps;
+  String _legalJumps;
 
   List<StepDirective> _stepDirectiveList;
   final _activeStepController =
@@ -77,9 +82,6 @@ class MaterialStepperComponent {
     });
   }
 
-  bool _stickyHeader = false;
-  bool get stickyHeader => _stickyHeader;
-
   /// When true, assertively announces the current step via aria live region.
   @Input()
   bool announceCurrentStep = false;
@@ -89,9 +91,15 @@ class MaterialStepperComponent {
   ///
   /// Applicable only to steppers with horizontal header.
   @Input()
-  set stickyHeader(value) {
-    _stickyHeader = getBool(value);
-  }
+  bool stickyHeader = false;
+
+  /// When `true`, steps will not be unloaded from the dom when inactive, but
+  /// will rather be hidden via css.
+  ///
+  /// This allows for fast switching between steps with DOMs that are
+  /// expensive to load.
+  @Input()
+  bool keepInactiveStepsInDom = false;
 
   // Jump to step at index if possible
   Future<bool> jumpStep(int index) {
@@ -140,6 +148,11 @@ class MaterialStepperComponent {
   /// By default, displays "Cancel".
   @Input()
   String noText = _cancelMsg;
+
+  /// Text to be displayed on the button that goes to the next step.
+  /// By default, displays "Continue".
+  @Input()
+  String yesText = continueMsg;
 
   /// Orientation in which the steps are laid out.
   ///
@@ -224,7 +237,6 @@ class MaterialStepperComponent {
     steps[index].requestStepJump(actionController.action);
     actionController.execute(() {
       activeStepIndex = index;
-      _recalculatePropertiesOfSteps();
       _activeStepController.add(activeStep);
       return true;
     }, valueOnCancel: false);

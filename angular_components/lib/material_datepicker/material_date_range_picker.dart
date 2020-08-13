@@ -6,6 +6,7 @@ import 'dart:async';
 import 'dart:html';
 
 import 'package:angular/angular.dart';
+import 'package:angular/meta.dart';
 import 'package:intl/intl.dart';
 import 'package:quiver/time.dart';
 import 'package:angular_components/button_decorator/button_decorator.dart';
@@ -20,8 +21,8 @@ import 'package:angular_components/material_button/material_button.dart';
 import 'package:angular_components/material_datepicker/comparison.dart';
 import 'package:angular_components/material_datepicker/comparison_option.dart';
 import 'package:angular_components/material_datepicker/config.dart';
-import 'package:angular_components/material_datepicker/date_range_editor_host.dart';
 import 'package:angular_components/material_datepicker/date_range_editor.dart';
+import 'package:angular_components/material_datepicker/date_range_editor_host.dart';
 import 'package:angular_components/material_datepicker/model.dart';
 import 'package:angular_components/material_datepicker/module.dart';
 import 'package:angular_components/material_datepicker/next_prev_buttons.dart';
@@ -29,6 +30,7 @@ import 'package:angular_components/material_datepicker/preset.dart';
 import 'package:angular_components/material_datepicker/range.dart';
 import 'package:angular_components/material_popup/material_popup.dart';
 import 'package:angular_components/material_select/dropdown_button.dart';
+import 'package:angular_components/mixins/focusable_mixin.dart';
 import 'package:angular_components/model/date/date.dart';
 import 'package:angular_components/model/date/date_formatter.dart';
 import 'package:angular_components/model/observable/observable.dart';
@@ -77,6 +79,7 @@ const _defaultMaxHeight = 600;
     DateRangeEditorComponent,
     DeferredContentDirective,
     DropdownButtonComponent,
+    FocusableDirective,
     KeyboardOnlyFocusIndicatorDirective,
     MaterialButtonComponent,
     MaterialPopupComponent,
@@ -87,11 +90,13 @@ const _defaultMaxHeight = 600;
   ],
   providers: [
     ExistingProvider(DateRangeEditorHost, MaterialDateRangePickerComponent),
+    ExistingProvider(Focusable, MaterialDateRangePickerComponent),
     ExistingProvider(HasDisabled, MaterialDateRangePickerComponent),
     ExistingProvider(PopupSizeProvider, MaterialDateRangePickerComponent),
   ],
 )
 class MaterialDateRangePickerComponent
+    with FocusableMixin
     implements
         HasDisabled,
         OnInit,
@@ -101,7 +106,12 @@ class MaterialDateRangePickerComponent
         PopupSizeProvider {
   Focusable _dateRangeEditor;
   bool _focusOnDateRangeEditorInit = false;
-  PopupSizeProvider _popupSizeProvider;
+  final PopupSizeProvider _popupSizeProvider;
+
+  @ViewChild(ButtonDirective)
+  set focusableElement(ButtonDirective button) {
+    focusable = button;
+  }
 
   @Deprecated('Use [presets] instead.')
   @Input('predefinedRanges')
@@ -134,7 +144,6 @@ class MaterialDateRangePickerComponent
   ///
   /// Calendar will be hidden when custom range is not supported. Custom range
   /// should be supported in "fullyLoaded" or "basic" mode.
-
   bool get supportsCustomRange =>
       configuration == DateRangePickerConfiguration.fullyLoaded ||
       configuration == DateRangePickerConfiguration.basic;
@@ -156,6 +165,7 @@ class MaterialDateRangePickerComponent
   /// [DateRangePickerConfiguration.predefinedRangesOnly].
   ///
   /// Defaults to [DateRangePickerConfiguration.fullyLoaded].
+  /// Should not be changed after initialization.
   @Input('configuration')
   DateRangePickerConfiguration configuration =
       DateRangePickerConfiguration.fullyLoaded;
@@ -192,37 +202,19 @@ class MaterialDateRangePickerComponent
   ///
   /// Defaults to true.
   @Input()
-  set showNextPrevButtons(bool value) {
-    _showNextPrevButtons = value;
-  }
-
-  bool get showNextPrevButtons => _showNextPrevButtons;
-
-  bool _showNextPrevButtons = true;
+  bool showNextPrevButtons = true;
 
   /// Whether or not this date range picker includes a section to input 'N days
   /// to today' and 'N days to yesterday' ranges.
   ///
   /// Defaults to `true`.
   @Input()
-  set supportsDaysInputs(bool value) {
-    _supportsDaysInputs = value;
-  }
-
-  bool get supportsDaysInputs => _supportsDaysInputs;
-
-  bool _supportsDaysInputs = true;
+  bool supportsDaysInputs = true;
 
   /// Whether to enable compact calendar styles.
   @Input()
-  set compact(bool value) {
-    _compact = value;
-  }
-
   @HostBinding('class.compact')
-  bool get compact => _compact;
-
-  bool _compact = !window.matchMedia("(pointer: coarse)").matches;
+  bool compact = !window.matchMedia("(pointer: coarse)").matches;
 
   /// For date range selection, whether clicking to move the start date should
   /// also move the end date (preserving the length of the selected range).
@@ -308,6 +300,12 @@ class MaterialDateRangePickerComponent
 
   bool get requireFullPeriods => model.requireFullPeriods;
 
+  /// Whether to use menu-items-groups for presets for improved accessibility.
+  ///
+  /// Internal flag for safe transition.
+  @Input()
+  bool useMenuForPresets = false;
+
   /// An error displayed below the dropdown button.
   @Input()
   String error;
@@ -367,7 +365,7 @@ class MaterialDateRangePickerComponent
   /// saved or canceled when the popup is closed.
   bool _isApplying = false;
 
-  Disposer _disposer = Disposer.oneShot();
+  final Disposer _disposer = Disposer.oneShot();
 
   DatepickerComparison get range => selection.value;
 
@@ -427,11 +425,12 @@ class MaterialDateRangePickerComponent
       ..maxDate = maxDate
       ..requireFullPeriods = requireFullPeriods
       ..basic = isBasic;
-    if (selection.value != null)
+    if (selection.value != null) {
       model.value = _maybeStripComparison(selection.value);
+    }
     _disposer.addFunction(model.dispose);
 
-    _needsApply(modelValue) =>
+    bool _needsApply(DatepickerComparison modelValue) =>
         modelValue != selection.value || !_isPreset(modelValue);
 
     // Wire the internal model and the external value up to each other.
@@ -505,6 +504,7 @@ class MaterialDateRangePickerComponent
               DatepickerComparison.reclamp(model.value, minDate, maxDate);
           model.minDate = minDate;
           model.maxDate = maxDate;
+          model.basic = isBasic;
 
           _initCalendar();
           setFocusToDateRangeEditor();
@@ -581,12 +581,24 @@ class MaterialDateRangePickerComponent
     focusOnClose.focus(event);
   }
 
+  @visibleForTemplate
+  void applyAndPreventDefault(UIEvent event) {
+    apply(event);
+    event.preventDefault();
+  }
+
   void cancel() {
     model.restore(_lastState);
     selection.value = _lastState.value;
     _showApplyBar(!_isPreset(_lastState.value));
     close();
     focusOnClose.focus();
+  }
+
+  @visibleForTemplate
+  void cancelAndPreventDefault(UIEvent event) {
+    cancel();
+    event.preventDefault();
   }
 
   bool get hasTitle => selection.value?.range?.title != null;
@@ -652,8 +664,9 @@ class MaterialDateRangePickerComponent
 
   static final cancelButtonMsg = Intl.message('Cancel',
       meaning: 'Button in a date picker',
-      desc: 'Label for a "cancel" button -- abandon the current date selection '
-          'and go back to whatever it was before the user opened the date picker');
+      desc: 'Label for a "cancel" button -- abandon the current date'
+          ' selection and go back to whatever it was before the user'
+          ' opened the date picker');
 
   String get applyButtonMsg => applyButtonLabel ?? _applyButtonMsg;
 

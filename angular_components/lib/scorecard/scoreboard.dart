@@ -11,7 +11,7 @@ import 'package:angular_components/material_button/material_button.dart';
 import 'package:angular_components/material_icon/material_icon.dart';
 import 'package:angular_components/model/selection/selection_model.dart';
 import 'package:angular_components/utils/browser/dom_service/angular_2.dart';
-import 'package:angular_components/utils/color/palette.dart';
+import 'package:angular_components/utils/color/material_chart_colors.dart';
 import 'package:angular_components/utils/disposer/disposer.dart';
 
 import 'scorecard.dart';
@@ -179,11 +179,12 @@ class ScoreboardComponent implements OnInit, OnDestroy {
   void _resetTabIndex() {
     for (ScorecardComponent component in _scorecards) {
       var offset = _scorecardOffset(component.element);
-      var scoreCardBarEndPosition = _scorecardBar.currentTransformSize +
+      var scorecardBarEndPosition = _scorecardBar.currentTransformSize +
           _scorecardBar.currentClientSize -
           _scorecardBar.currentButtonSize;
-      if (offset < scoreCardBarEndPosition &&
-          offset > _scorecardBar.currentTransformSize) {
+      if (offset < scorecardBarEndPosition &&
+          offset > _scorecardBar.currentTransformSize &&
+          component.selectable) {
         component.element.tabIndex = 0;
       } else {
         component.element.tabIndex = -1;

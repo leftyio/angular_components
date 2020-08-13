@@ -28,6 +28,14 @@ import 'tooltip_target.dart';
 /// - `icon` -- The name of the icon. This overrides `type`, if both are
 /// provided. See [https://www.google.com/design/icons/] for available icons.
 ///
+/// - `size` -- The size of the icon. Possible values:
+///   - `x-small`, `small`, `medium`, `large` and `x-large` correspond to
+///     the [MaterialIconComponent] sizes of 12px, 13px, 16px, 18px,
+///     and 20px, respectively.
+///   - No value defaults to `medium`.
+///   - `` -- The empty String corresponds to the default size of
+///   [MaterialIconComponent], which is 24px.
+///
 /// - `type` -- The type of the icon. Possible values:
 ///   - `help` -- Shows a "help_outline" icon (a circled "?"). (Default)
 ///   - `info` -- Shows an "info_outline" (a circled "i")
@@ -66,6 +74,8 @@ import 'tooltip_target.dart';
   preserveWhitespace: true,
 )
 class MaterialIconTooltipComponent implements DeferredContentAware {
+  final _contentVisible = StreamController<bool>.broadcast(sync: true);
+
   HtmlElement element;
 
   /// Icon identifier for [MaterialIconComponent]. See
@@ -96,7 +106,7 @@ class MaterialIconTooltipComponent implements DeferredContentAware {
 
   MaterialIconTooltipComponent(
       AcxDarkTheme darkTheme,
-      HtmlElement element,
+      this.element,
       @Attribute('icon') String icon,
       @Attribute('type') String type,
       @Attribute('size') String size)
@@ -109,15 +119,20 @@ class MaterialIconTooltipComponent implements DeferredContentAware {
         iconSize == 'large' ||
         iconSize == 'x-large' ||
         iconSize == '');
-    this.element = element;
+
     darkTheme.themeElement(element);
   }
 
   @ViewChild('tooltipRef')
   TooltipBehavior tooltipBehavior;
 
+  @ViewChild(MaterialPaperTooltipComponent)
+  set deferredContentAware(DeferredContentAware deferredContentAware) {
+    _contentVisible.addStream(deferredContentAware.contentVisible);
+  }
+
   @override
-  Stream<bool> get contentVisible => tooltipBehavior.tooltipActivate;
+  Stream<bool> get contentVisible => _contentVisible.stream;
 
   static final helpTooltipLabel = Intl.message(
       'Mouseover, click, press Enter key or Space key on this icon for more '

@@ -4,9 +4,9 @@
 
 /// A function which takes in an error map, and returns another modified errors
 /// map.
-typedef Map<String, dynamic> ErrorFn(Map<String, dynamic> errors);
+typedef ErrorFn = Map<String, dynamic> Function(Map<String, dynamic> errors);
 
-/// Convience function for replacing multiple errors for Components using the
+/// Convenience function for replacing multiple errors for Components using the
 /// errorRenderer pattern.
 ErrorFn replaceErrors(Map<String, String> overrides) =>
     (errors) => _replaceErrorsImpl(overrides, errors);

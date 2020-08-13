@@ -20,7 +20,7 @@ import 'dart:async';
 import 'package:angular_components/utils/disposer/disposer.dart';
 
 /// Compares two objects for reference or content equality.
-typedef bool EqualsFn<T>(T a, T b);
+typedef EqualsFn<T> = bool Function(T a, T b);
 
 /// Allows listening on changes.
 abstract class ObserveAware<T> {
@@ -55,7 +55,7 @@ abstract class ChangeAware<T> extends ObserveAware<T> {
 
 /// Provides notification coalesce support for the other [ChangeAware] classes.
 class ChangeNotificationProvider<T> implements ChangeAware<T>, Disposable {
-  bool _coalesce;
+  final bool _coalesce;
   bool _coalesceScheduled = false;
   StreamController<T> _streamController;
   StreamController<Change<T>> _changeController;
@@ -88,6 +88,9 @@ class ChangeNotificationProvider<T> implements ChangeAware<T>, Disposable {
     }
     return _changeController.stream;
   }
+
+  /// Whether there is a subscriber to [stream] or [changes].
+  bool get hasListener => _hasStreamListener || _hasChangeListener;
 
   /// Notifies the streams about a new value (or forces the notification without
   /// equality check).
@@ -326,7 +329,7 @@ class ObservableReference<T> extends ChangeNotificationProvider<T>
 /// Merges multiple updates of [ObserveAware]s and emits a single update
 /// notification stream.
 class ObservableComposite<T> extends ChangeNotificationProvider<T> {
-  Map<Stream, StreamSubscription> _subscriptions =
+  final Map<Stream, StreamSubscription> _subscriptions =
       <Stream, StreamSubscription>{};
   final _disposer = Disposer.oneShot();
   final bool _withStackTrace;

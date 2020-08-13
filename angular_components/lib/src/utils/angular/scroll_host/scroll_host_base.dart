@@ -61,18 +61,22 @@ abstract class ScrollHostBase implements ScrollHost {
   /// Whether to use position: sticky and multithreaded scrolling.
   final bool usePositionSticky;
 
+  /// Whether to use [GestureListener] to override the native browser smooth
+  /// scrolling on touch devices.
+  final bool useTouchGestureListener;
+
   /// The target of scroll events from the scrollbar.
   GlobalEventHandlers get scrollbarHost;
 
   ScrollHostBase(this._domService, this._ngZone,
       GestureListenerFactory gestureListenerFactory,
-      {this.usePositionSticky = false}) {
+      {this.usePositionSticky = false, this.useTouchGestureListener = true}) {
     // TODO(google): add alternative impl based on TouchEvent.supported.
     _panController = NonTouchPanController(_ngZone, _domService, anchorElement);
     _stickyController = usePositionSticky
         ? PositionStickyController(this)
         : StickyControllerImpl(_domService, this);
-    if (feature_detector.isTouchInterface) {
+    if (feature_detector.isTouchInterface && useTouchGestureListener) {
       _gestureListener =
           gestureListenerFactory.create(anchorElement, _isDirectionScrollable);
     }
@@ -123,6 +127,7 @@ abstract class ScrollHostBase implements ScrollHost {
     _panController.dispose();
     _stickyController.dispose();
     _onScrollController?.close();
+    _onScrollController = null;
     if (_intersectionObserver != null) {
       _intersectionObserver.disconnect();
       for (var controller in _intersectionStreams.values) {
@@ -178,10 +183,14 @@ abstract class ScrollHostBase implements ScrollHost {
       _elementListenersDisposer.addStreamSubscription(
           anchorElement.onWheel.listen((WheelEvent event) {
         if (event is! WheelEvent) return;
-        // Ignore mouse wheel event if the CTRL key or SHIFT key is pressed.
+        // Ignore mouse wheel event if the CTRL key, SHIFT key or META key
+        // (i.e. WIN key for Windows and CMD key for Mac) is pressed.
         // This is consistent with other Google sites and ensures compatibility
-        // with embedded APIs (e.g. Maps zooms the map when CTRL is pressed).
-        if ((event?.ctrlKey ?? false) || (event?.shiftKey ?? false)) return;
+        // with embedded APIs (e.g. Maps zooms the map when
+        // CTRL/CMD is pressed).
+        if ((event?.ctrlKey ?? false) ||
+            (event?.metaKey ?? false) ||
+            (event?.shiftKey ?? false)) return;
 
         // Use default values from WheelEvent if deltaX/deltaY not supported by
         // the browser (currently occurred in Firefox). Vertical scrolling still
@@ -349,9 +358,10 @@ class ElementScrollHostBase extends ScrollHostBase {
 
   ElementScrollHostBase(DomService domService, NgZone managedZone,
       GestureListenerFactory gestureListenerFactory, this.element,
-      {bool usePositionSticky = false})
+      {bool usePositionSticky = false, useTouchGestureListener = true})
       : super(domService, managedZone, gestureListenerFactory,
-            usePositionSticky: usePositionSticky) {
+            usePositionSticky: usePositionSticky,
+            useTouchGestureListener: useTouchGestureListener) {
     element.style.overflowY = 'auto';
 
     // Allows scroll host which contains huge iframe be able to scroll on iOS.
@@ -450,7 +460,7 @@ class BasePanClassDirective {
     }
   }
 
-  _updateClass(bool prevValue, bool newValue, String suffix) {
+  void _updateClass(bool prevValue, bool newValue, String suffix) {
     if (prevValue == newValue) return;
     if (prevValue) {
       _domService.scheduleWrite(() {

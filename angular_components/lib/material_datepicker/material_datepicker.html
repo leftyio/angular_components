@@ -24,7 +24,7 @@
     [(visible)]="popupVisible"
     [preferredPositions]="preferredPositions">
   <focus-trap>
-    <div class="popup-content" [class.compact]="compact" *deferredContent>
+    <div class="popup-content" [class.compact]="compact" *deferredContent (keyup)="onKeyUp($event)">
       <div class="inner-label-wrapper">
           <span *ngIf="presetDates.isNotEmpty" class="inner-label" >{{labelMsg}}</span>
       </div>
@@ -49,7 +49,7 @@
           <material-select-item *ngFor="let presetDate of presetDates"
                                 (trigger)="onPresetClicked(presetDate)"
                                 [selected]="isPresetDateSelected(presetDate)"
-                                closeOnActivate="false">
+                                [closeOnActivate]="false">
             {{presetDate.title}}
         </material-select-item>
       </div>

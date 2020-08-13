@@ -7,19 +7,21 @@ import 'dart:html';
 import 'dart:math';
 
 import 'package:angular/angular.dart';
+import 'package:angular/meta.dart';
 import 'package:intl/intl.dart';
 import 'package:angular_components/button_decorator/button_decorator.dart';
 import 'package:angular_components/content/deferred_content.dart';
 import 'package:angular_components/content/deferred_content_aware.dart';
-import 'package:angular_components/interfaces/has_disabled.dart';
 import 'package:angular_components/focus/focus.dart';
 import 'package:angular_components/focus/keyboard_only_focus_indicator.dart';
+import 'package:angular_components/interfaces/has_disabled.dart';
 import 'package:angular_components/material_icon/material_icon.dart';
 import 'package:angular_components/material_yes_no_buttons/material_yes_no_buttons.dart';
 import 'package:angular_components/model/action/async_action.dart';
 import 'package:angular_components/model/observable/observable.dart';
 import 'package:angular_components/utils/angular/id/id.dart';
 import 'package:angular_components/utils/browser/dom_service/dom_service.dart';
+import 'package:angular_components/utils/disposer/disposable_callback.dart';
 import 'package:angular_components/utils/disposer/disposer.dart';
 
 /// A material-styled expansion-panel.
@@ -43,8 +45,7 @@ import 'package:angular_components/utils/disposer/disposer.dart';
 ///    other panels when expanded.
 ///  - `forceContentWhenClosed` -- Keeps expansion panel content in the DOM when
 ///    the expansion panel is closed. This should only be used in rare
-///    circumstances as the content will be tabbable and so will be worse for
-///    accessibility.
+///    circumstances.
 ///
 /// __Content Reference:__
 ///
@@ -103,28 +104,26 @@ class MaterialExpansionPanel
       : shouldExpandOnLeft = expandOnLeft != null,
         forceContentWhenClosed = forceContent != null;
 
-  Focusable _focusableItem;
-
   /// Set the auto focus child so that we can focus on it when the panel opens.
   ///
   /// Unfortunately, this only selects the first [AutoFocusDirective] in the
   /// contents of the expansion panel, which means that if there is another
   /// [AutoFocusDirective] in an <ng-content> that is not the .content, that
   /// will get focused instead of the [AutoFocusDirective] inside the .content.
-  @Deprecated(
-      'Please tag the element or widget to focus on open with #focusOnOpen')
+  @visibleForTemplate
   @ContentChild(AutoFocusDirective)
-  set autoFocusChild(AutoFocusDirective focus) {
-    _focusableItem = focus;
-  }
+  AutoFocusDirective autoFocusChild;
+
+  Focusable _focusOnOpenChild;
 
   /// Sets the focus child so that we can focus on it when the panel opens.
   @ContentChild('focusOnOpen')
-  set focusElement(dynamic element) {
+  @Input('focusOnOpen')
+  set focusOnOpenChild(dynamic element) {
     if (element is Focusable) {
-      _focusableItem = element;
+      _focusOnOpenChild = element;
     } else if (element is ElementRef) {
-      _focusableItem = RootFocusable(element.nativeElement);
+      _focusOnOpenChild = RootFocusable(element.nativeElement);
     } else {
       assert(
           element == null,
@@ -137,20 +136,47 @@ class MaterialExpansionPanel
   @ViewChild('mainPanel')
   set mainPanel(HtmlElement mainPanel) {
     _mainPanel = mainPanel;
-    _disposer.addStreamSubscription(_mainPanel.onTransitionEnd.listen((_) {
-      // Clear height override so it will match the active child's height.
-      _mainPanel.style.height = '';
-    }));
+    _ngZone.runOutsideAngular(() {
+      _disposer.addStreamSubscription(_mainPanel.onTransitionEnd
+          .where((e) => e.eventPhase == Event.AT_TARGET)
+          .listen((_) {
+        // Clear height override so it will match the active child's height.
+        _mainPanel.style.height = '';
+        // If we just finished closing, let deferred content stop rendering
+        // the panel body.
+        if (!isExpanded) {
+          _ngZone.run(() => _contentVisible.add(false));
+        }
+      }));
+    });
+
+    final transitionCheck = DisposableCallback(() {
+      // If we don't have a transition (because style mixins/overrides/disabled
+      // in tests) just forward the isExpanded change event so deferredContent
+      // can disappear.
+      if (!_mainPanelHasHeightTransition) {
+        _disposer.addStreamSubscription(isExpandedChange.listen((expanded) {
+          // Just check for false (closed). Open (true) is always done first.
+          if (!expanded) _contentVisible.add(false);
+        }));
+      }
+    });
+    _domService.scheduleRead(transitionCheck);
+    _disposer.addDisposable(transitionCheck);
   }
 
   HtmlElement _headerPanel;
   @ViewChild('headerPanel')
   set headerPanel(HtmlElement headerPanel) {
     _headerPanel = headerPanel;
-    _disposer.addStreamSubscription(_headerPanel.onTransitionEnd.listen((_) {
-      // Clear height override so it will match the active child's height.
-      _headerPanel.style.height = '';
-    }));
+    _ngZone.runOutsideAngular(() {
+      _disposer.addStreamSubscription(_headerPanel.onTransitionEnd
+          .where((e) => e.eventPhase == Event.AT_TARGET)
+          .listen((_) {
+        // Clear height override so it will match the active child's height.
+        _headerPanel.style.height = '';
+      }));
+    });
   }
 
   HtmlElement _mainContent;
@@ -193,7 +219,7 @@ class MaterialExpansionPanel
   @Input()
   bool closeOnSave = true;
 
-  ObservableReference<bool> _isExpanded = ObservableReference(false);
+  final ObservableReference<bool> _isExpanded = ObservableReference(false);
   bool get isExpanded => _isExpanded.value;
 
   /// If true, the panel is expanded by default, if false, the panel is closed.
@@ -219,7 +245,8 @@ class MaterialExpansionPanel
       StreamController<bool>.broadcast(sync: true);
 
   @override
-  Stream<bool> get contentVisible => isExpandedChange;
+  Stream<bool> get contentVisible => _contentVisible.stream;
+  final _contentVisible = StreamController<bool>.broadcast(sync: true);
 
   /// Whether a different panel in the set is currently expanded.
   ///
@@ -277,6 +304,15 @@ class MaterialExpansionPanel
   }
 
   String get groupAriaLabel => _groupAriaLabel == null ? name : _groupAriaLabel;
+
+  /// Level of the heading.
+  ///
+  /// If null, the heading will not have role="heading".
+  @Input()
+  int headerAriaLevel;
+
+  @visibleForTemplate
+  String get headerRole => headerAriaLevel == null ? 'none' : 'heading';
 
   /// An optional icon name to replace the expand arrows with a custom icon.
   @Input()
@@ -349,7 +385,7 @@ class MaterialExpansionPanel
       : _namedPanelMsg(groupAriaLabel);
 
   String get headerMsg {
-    if (disabled) {
+    if (disabled || _groupAriaLabel != null) {
       return groupAriaLabel;
     } else {
       return isExpanded ? closePanelMsg : openPanelMsg;
@@ -522,12 +558,20 @@ class MaterialExpansionPanel
     stream.add(actionCtrl.action);
     var stateWasInitialized = initialized;
     actionCtrl.execute(() {
+      // Update our state before redrawing. State changes need to occur before
+      // follow ups (animation or autofocus) so that styles and deferred content
+      // can update.
       _isExpanded.value = expand;
+      if (expand) _contentVisible.add(true);
       if (byUserAction) _isExpandedChangeByUserAction.add(expand);
       _changeDetector.markForCheck();
-      if (expand && _focusableItem != null) {
+      if (expand) {
         _domService.scheduleWrite(() {
-          _focusableItem.focus();
+          if (autoFocusChild != null) {
+            autoFocusChild.focus();
+          } else if (byUserAction && _focusOnOpenChild != null) {
+            _focusOnOpenChild.focus();
+          }
         });
       }
       if (stateWasInitialized) _transitionHeightChange(expand);
@@ -593,10 +637,9 @@ class MaterialExpansionPanel
     final contentHeight = _mainContent.scrollHeight;
     var expandedPanelHeight = '';
 
-    final mainPanelStyle = _mainPanel.getComputedStyle();
     // Do our best to make sure that onTransitionEnd will fire later.
     final hasHeightTransition =
-        contentHeight > 0 && mainPanelStyle.transition.contains('height');
+        contentHeight > 0 && _mainPanelHasHeightTransition;
 
     if (hasHeightTransition) {
       // If the content-wrapper has a top margin, it is not reflected in the
@@ -605,6 +648,12 @@ class MaterialExpansionPanel
       expandedPanelHeight = 'calc(${contentHeight}px + ${topMargin})';
     }
     return expandedPanelHeight;
+  }
+
+  bool get _mainPanelHasHeightTransition {
+    final mainPanelStyle = _mainPanel.getComputedStyle();
+    // Do our best to make sure that onTransitionEnd will fire later.
+    return mainPanelStyle.transition.contains('height');
   }
 
   /// Reads the DOM state to calculate the height of the header in its

@@ -242,6 +242,13 @@ class MaterialPopupComponent extends Object
     _autoDismissBlockers = elements;
   }
 
+  /// The label to be used for assistive technologies.
+  ///
+  /// If [role] is "dialog" and this is set, screenreaders will read this label
+  /// when focus first enters the popup.
+  @Input()
+  String ariaLabel;
+
   MaterialPopupComponent(
       @Optional() @SkipSelf() this._hierarchy,
       @Optional() @SkipSelf() MaterialPopupComponent parentPopup,
@@ -454,7 +461,7 @@ class MaterialPopupComponent extends Object
     var initialData = Completer<Rectangle>();
     var popupContentsLayoutStream = _overlayRef
         .measureSizeChanges()
-        .asBroadcastStream(onCancel: _visibleDisposer.addStreamSubscription);
+        .asBroadcastStream(onListen: _visibleDisposer.addStreamSubscription);
     var popupSourceLayoutStream =
         state.source.onDimensionsChanged(track: state.trackLayoutChanges);
     if (!state.trackLayoutChanges) {
@@ -595,7 +602,7 @@ class MaterialPopupComponent extends Object
 
     // Set the overlay .pane to display: none.
     _overlayRef.state.visibility = visibility.Visibility.None;
-    _overlayRef.overlayElement.style..display = 'none';
+    _overlayRef.overlayElement.style.display = 'none';
 
     // Notify listeners that the popup is not visible.
     _isVisible = false;

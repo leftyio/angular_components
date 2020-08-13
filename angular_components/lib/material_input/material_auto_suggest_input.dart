@@ -6,6 +6,7 @@ import 'dart:async';
 import 'dart:html' as html;
 
 import 'package:angular/angular.dart';
+import 'package:angular/meta.dart';
 import 'package:angular_forms/angular_forms.dart';
 import 'package:meta/meta.dart';
 import 'package:angular_components/button_decorator/button_decorator.dart';
@@ -46,7 +47,7 @@ import 'package:angular_components/utils/id_generator/id_generator.dart';
 
 import 'material_input.dart';
 
-typedef String _InputChangeCallback(String inputText);
+typedef _InputChangeCallback = String Function(String inputText);
 
 /// See material_auto_suggest_input.md for an overview of the component.
 /// See examples for usage.
@@ -101,6 +102,7 @@ class MaterialAutoSuggestInputComponent<T> extends MaterialSelectBase<T>
         KeyboardHandlerMixin,
         HighlightAssistantMixin<T>
     implements
+        AfterChanges,
         ControlValueAccessor<Object>,
         Focusable,
         OnInit,
@@ -122,6 +124,8 @@ class MaterialAutoSuggestInputComponent<T> extends MaterialSelectBase<T>
 
   final String popupId;
   final String inputId;
+
+  final ChangeDetectorRef _changeDetector;
 
   /// Keeps track of the item matching the filter as the suggestions are
   /// being updated.
@@ -185,7 +189,7 @@ class MaterialAutoSuggestInputComponent<T> extends MaterialSelectBase<T>
   /// The last future of filtering the options.
   DisposableFuture _lastFilterFuture;
 
-  /// Whether a filter call is scheduled.
+  /// Whether a filter is scheduled during the next call of [ngAfterChanges].
   bool _filterScheduled = false;
 
   bool _isDisposed = false;
@@ -239,6 +243,16 @@ class MaterialAutoSuggestInputComponent<T> extends MaterialSelectBase<T>
 
   bool get accessibleItemActivation => _accessibleItemActivation;
   bool _accessibleItemActivation = true;
+
+  /// The autocomplete attribute for the inner input element.
+  ///
+  /// Defines the type of autocomplete functionality for the input. For example,
+  /// can be `on` or `off``..
+  ///
+  /// Note: Setting this field may depend on the browser implementation and is
+  /// not guaranteed to turn off the autocomplete functionality.
+  @Input()
+  String inputAutocomplete;
 
   int _limit = 10;
 
@@ -337,11 +351,16 @@ class MaterialAutoSuggestInputComponent<T> extends MaterialSelectBase<T>
   factory MaterialAutoSuggestInputComponent(
           @Optional() @Self() NgControl cd,
           @Optional() IdGenerator idGenerator,
+          ChangeDetectorRef changeDetector,
           @Optional() @SkipSelf() PopupSizeProvider popupSizeDelegate) =>
-      MaterialAutoSuggestInputComponent.protected(cd,
-          idGenerator ?? SequentialIdGenerator.fromUUID(), popupSizeDelegate);
+      MaterialAutoSuggestInputComponent.protected(
+          cd,
+          idGenerator ?? SequentialIdGenerator.fromUUID(),
+          changeDetector,
+          popupSizeDelegate);
 
-  MaterialAutoSuggestInputComponent.protected(this._cd, IdGenerator idGenerator,
+  MaterialAutoSuggestInputComponent.protected(
+      this._cd, IdGenerator idGenerator, this._changeDetector,
       [this._popupSizeDelegate])
       : activeModel = ActiveItemModel(idGenerator, loop: true),
         popupId = idGenerator.nextId(),
@@ -381,6 +400,9 @@ class MaterialAutoSuggestInputComponent<T> extends MaterialSelectBase<T>
     if (isSingleSelect && selection.selectedValues.isNotEmpty) {
       _lastSelectedItem = selection.selectedValues.first;
       if (_isInitialized) {
+        // Make sure input text is initialized correctly regardless of input
+        // order. Specified input text should take precedence over selection
+        // status.
         inputText = itemRenderer(_lastSelectedItem);
       }
     }
@@ -413,6 +435,7 @@ class MaterialAutoSuggestInputComponent<T> extends MaterialSelectBase<T>
   @Input('selectionOptions')
   @override
   set optionsInput(dynamic value) {
+    _filterScheduled = true;
     super.optionsInput = value;
   }
 
@@ -420,13 +443,16 @@ class MaterialAutoSuggestInputComponent<T> extends MaterialSelectBase<T>
   set options(SelectionOptions<T> options) {
     if (options == null) return;
     super.options = options;
-    _filterSuggestions();
     activeModel.items = options.optionsList;
     _optionsListener?.cancel();
     _optionsListener = options.stream.listen((_) {
       activeModel.items = options.optionsList;
       _updateItemActivation();
+      _changeDetector?.markForCheck();
     });
+    if (!_filterScheduled) {
+      _filterSuggestions();
+    }
   }
 
   /// How many suggestions to show.
@@ -438,7 +464,7 @@ class MaterialAutoSuggestInputComponent<T> extends MaterialSelectBase<T>
     var newLimit = getInt(value);
     if (_limit != newLimit) {
       _limit = newLimit;
-      _filterSuggestions();
+      _filterScheduled = true;
     }
   }
 
@@ -463,7 +489,7 @@ class MaterialAutoSuggestInputComponent<T> extends MaterialSelectBase<T>
 
   /// An option is disabled if the options implements Selectable, but the [item]
   /// is not selectable.
-  bool isOptionDisabled(Object item) {
+  bool isOptionDisabled(T item) {
     // TODO: Verify if this can be simplified to .isDisabledIn.
     //
     // The prior code did a check for `!= SelectableOption.Selected`. It is
@@ -471,6 +497,9 @@ class MaterialAutoSuggestInputComponent<T> extends MaterialSelectBase<T>
     // disabled, for example.
     return !Selectable.isSelectableIn(options, item, true);
   }
+
+  /// Whether an option is hidden.
+  bool isOptionHidden(T item) => Selectable.isHiddenIn(options, item, false);
 
   /// Whether to highlight options.
   /// Default value is `true`.
@@ -485,7 +514,7 @@ class MaterialAutoSuggestInputComponent<T> extends MaterialSelectBase<T>
       : super.componentRenderer;
 
   @override
-  FactoryRenderer get factoryRenderer => highlightOptions &&
+  FactoryRenderer<RendersValue, T> get factoryRenderer => highlightOptions &&
           super.factoryRenderer == null &&
           super.componentRenderer == null
       ? highlightFactoryRenderer
@@ -574,6 +603,18 @@ class MaterialAutoSuggestInputComponent<T> extends MaterialSelectBase<T>
     return true;
   }
 
+  @visibleForTemplate
+  void handleChange(String newValue) {
+    inputText = newValue;
+    showPopup = true;
+  }
+
+  @visibleForTemplate
+  void handleClick(html.Event event) {
+    showPopup = true;
+    event.stopPropagation();
+  }
+
   /// Fired when the close icon is clicked.
   @Output('clear')
   Stream<void> get onClear => _onClear.stream;
@@ -587,7 +628,7 @@ class MaterialAutoSuggestInputComponent<T> extends MaterialSelectBase<T>
 
   bool _isFocused = false;
 
-  /// Fired when the input gains focus
+  /// Fired when the input gains focus.
   @Output('focus')
   Stream<html.FocusEvent> get onFocus => _onFocus.stream;
   final _onFocus = StreamController<html.FocusEvent>.broadcast(sync: true);
@@ -600,31 +641,47 @@ class MaterialAutoSuggestInputComponent<T> extends MaterialSelectBase<T>
     _isFocused = true;
   }
 
-  /// Fired when the input gains blur or auto suggest item get selected.
+  /// Fired when this component loses focus.
+  ///
+  /// This stream is fired when:
+  ///  1. the underlying material input blurs, if there is no popup and
+  ///     there are subscribers to the blur stream
+  ///  2. the suggestions popup closes and there is no focus on the
+  ///     underlying material input
   @Output('blur')
   Stream<void> get onBlur => _onBlur.stream;
   final _onBlur = StreamController<void>.broadcast(sync: true);
 
+  /// Fired when the nested MaterialInputComponent fires a blur event.
+  @Output('inputBlur')
+  Stream<void> get onInputBlur => _onInputBlur.stream;
+  final _onInputBlur = StreamController<void>.broadcast(sync: true);
+
   void handleBlur(html.FocusEvent event) {
+    _onInputBlur.add(null);
+
     _isFocused = false;
     if ((!showPopup || !hasOptions) && _onBlur != null) {
       _onBlur.add(null);
     }
   }
 
+  @override
+  void ngAfterChanges() {
+    if (_filterScheduled) {
+      _filterScheduled = false;
+      _filterSuggestions();
+    }
+  }
+
   /// Filter the suggestions if the flag is set and filtering is supported.
   void _filterSuggestions() {
-    if (_filterScheduled || !filterSuggestions || options is! Filterable) {
+    if (_isDisposed || !filterSuggestions || options is! Filterable) {
       return;
     }
-    _filterScheduled = true;
-    scheduleMicrotask(() {
-      if (_isDisposed) return;
-      _filterScheduled = false;
-      _lastFilterFuture?.dispose();
-      _lastFilterFuture =
-          (options as Filterable).filter(_inputText, limit: _limit);
-    });
+    _lastFilterFuture?.dispose();
+    _lastFilterFuture =
+        (options as Filterable).filter(_inputText, limit: _limit);
   }
 
   void _updateItemActivation(
@@ -726,6 +783,7 @@ class MaterialAutoSuggestInputComponent<T> extends MaterialSelectBase<T>
   void handleUpKey(html.KeyboardEvent event) {
     if (showPopup) {
       event.preventDefault(); // Prevent input caret from jumping.
+      event.stopPropagation();
       if (!_isFocused) focus();
       activeModel.activatePrevious();
     }
@@ -735,6 +793,7 @@ class MaterialAutoSuggestInputComponent<T> extends MaterialSelectBase<T>
   void handleDownKey(html.KeyboardEvent event) {
     if (showPopup) {
       event.preventDefault(); // Prevent input caret from jumping.
+      event.stopPropagation();
       if (!_isFocused) focus();
       activeModel.activateNext();
     }
@@ -744,6 +803,7 @@ class MaterialAutoSuggestInputComponent<T> extends MaterialSelectBase<T>
   void handlePageUp(html.KeyboardEvent event) {
     if (showPopup) {
       event.preventDefault(); // Prevent page from scrolling.
+      event.stopPropagation();
       if (!_isFocused) focus();
       activeModel.activateFirst();
     }
@@ -753,6 +813,7 @@ class MaterialAutoSuggestInputComponent<T> extends MaterialSelectBase<T>
   void handlePageDown(html.KeyboardEvent event) {
     if (showPopup) {
       event.preventDefault(); // Prevent page from scrolling.
+      event.stopPropagation();
       if (!_isFocused) focus();
       activeModel.activateLast();
     }
